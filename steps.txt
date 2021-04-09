@@ -1,7 +1,0 @@
-sudo apt-get install libfuse-dev
-sudo apt-get build-dep python-fuse
-sudo apt install pkg-config
-sudo apt-get install python3-dev
-
-cd rfs/ && python3 -m venv venv/ && source venv/bin/activate
-pip install -r requirements.txt
