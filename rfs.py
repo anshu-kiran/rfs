@@ -12,12 +12,13 @@ fuse.fuse_python_api = (0, 2)
 
 class RFS(fuse.Fuse):
     def __init__(self, reddit, *args, **kw):
-        print({'******************** INIT ********************'})
+        print('\n******************** RFs Mounted ********************')
+        print('          You can now start browsing Reddit!         \n')
         super().__init__(*args, **kw)
         self.reddit = reddit
 
     def getattr(self, path):
-        print({'******************** GETATTR ********************'})
+        print('******************** GETATTR ********************')
         st = fuse.Stat()
         st.st_nlink = 2
         st.st_atime = int(time.time())
@@ -91,7 +92,7 @@ class RFS(fuse.Fuse):
         return st
 
     def readdir(self, path, offset):
-        print({'******************** READDIR ********************'})
+        print('******************** READDIR ********************')
         yield fuse.Direntry('.')
         yield fuse.Direntry('..')
 
@@ -149,7 +150,7 @@ class RFS(fuse.Fuse):
                         yield fuse.Direntry(filename)
 
     def mkdir(self, path, mode):
-        print({'******************** MKDIR ********************'})
+        print('******************** MKDIR ********************')
         try:
             sub = path.split('/')[-1]
             self.reddit.subreddit(sub).subscribe()
@@ -158,7 +159,7 @@ class RFS(fuse.Fuse):
             return -errno.ENOSYS
 
     def rmdir(self, path):
-        print({'******************** RMDIR ********************'})
+        print('******************** RMDIR ********************')
         try:
             sub = path.split('/')[-1]
             self.reddit.subreddit(sub).unsubscribe()
@@ -167,7 +168,7 @@ class RFS(fuse.Fuse):
             return -errno.ENOSYS
 
     def read(self, path, length, offset, fh=None):
-        print({'******************** READ ********************'})
+        print('******************** READ ********************')
         formatted = []
         splitted_path = path.split('/')
         path_length = len(splitted_path)
@@ -199,7 +200,7 @@ class RFS(fuse.Fuse):
         return formatted[offset:offset + length]
 
     def readlink(self, path):
-        print({'******************** READLINK ********************'})
+        print('******************** READLINK ********************')
         splitted_path = path.split('/')
         path_length = len(splitted_path)
         dots = ''
@@ -223,7 +224,7 @@ class RFS(fuse.Fuse):
             return f'{dots}r/{subreddit}/{post_id}'
 
     def write(self, path, buffer, offset, fh=None):
-        print({'******************** WRITE ********************'})
+        print('******************** WRITE ********************')
         splitted_path = path.split('/')
 
         if splitted_path[1] == 'r':

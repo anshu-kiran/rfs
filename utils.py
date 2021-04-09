@@ -7,7 +7,7 @@ import praw
 import tokens
 
 # read_only = true -> not logged in
-MAX_LENGTH = 5
+MAX_LENGTH = 50
 POST_METADATA = ['thumbnail', 'votes', 'content', 'reply', 'link', 'comments']
 USER_METADATA = ['submissions', 'comments']
 
