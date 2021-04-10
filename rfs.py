@@ -3,7 +3,6 @@ import stat
 import time
 
 import fuse
-import requests
 
 import utils
 
@@ -55,29 +54,10 @@ class RFS(fuse.Fuse):
                 st.st_mode = stat.S_IFREG | 0o0444
                 post_id = splitted_path[3].split('_')[-1]
                 post = self.reddit.submission(post_id)
-                formatted = ''
-                if splitted_path[-1] == 'content':
-                    formatted = utils.formatted_submission(post)
-                    formatted = formatted.encode('ascii', 'ignore')
-                elif splitted_path[-1] == 'votes':
-                    formatted = str(post.score) + '\n'
-                    formatted = formatted.encode('ascii', 'ignore')
-                elif splitted_path[-1] == 'comments':
-                    formatted = utils.formatted_comment(post)
-                    formatted = formatted.encode('ascii', 'ignore')
-                elif (splitted_path[-1] == 'thumbnail' and 'thumbnail' in dir(post)
-                      and post.thumbnail != '' and post.thumbnail != 'self'
-                      and post.thumbnail != 'default'):
-                    f = requests.get(post.thumbnail)
-                    if f.status_code == 200:
-                        formatted = f.content
-                elif splitted_path[-1] == 'link' and post.url:
-                    f = requests.get(post.url)
-                    if f.status_code == 200:
-                        formatted = f.content
-                elif splitted_path[-1] == 'reply':
+                data = utils.get_file_content(path, post)
+                if splitted_path[-1] == 'reply':
                     st.st_mode = stat.S_IFREG | 0o0666
-                st.st_size = len(formatted)
+                st.st_size = len(data)
 
         if splitted_path[1] == 'u':
             if path_length == 3:
@@ -91,7 +71,7 @@ class RFS(fuse.Fuse):
 
         return st
 
-    def readdir(self, path, offset):
+    def readdir(self, path, offset):  # Usage : ls mnt/r/
         print('******************** READDIR ********************')
         yield fuse.Direntry('.')
         yield fuse.Direntry('..')
@@ -116,7 +96,7 @@ class RFS(fuse.Fuse):
             elif path_length == 3:  # mnt/r/<subname>
                 subreddit = splitted_path[2]
                 for post in self.reddit.subreddit(subreddit).hot(limit=utils.MAX_LENGTH):
-                    filename = utils.sanitize_filepath(f'{post.title[:utils.MAX_LENGTH]} {post.id}')
+                    filename = utils.get_filename(f'{post.title[:utils.MAX_LENGTH]} {post.id}')
                     yield fuse.Direntry(filename)
                 yield fuse.Direntry('post')
 
@@ -126,7 +106,7 @@ class RFS(fuse.Fuse):
                 for item in utils.POST_METADATA:
                     if item != 'thumbnail' and item != 'link':
                         yield fuse.Direntry(item)
-                if post.thumbnail != "" and post.thumbnail != 'self' and post.thumbnail != 'default':
+                if post.thumbnail not in ['', 'self', 'default']:
                     yield fuse.Direntry('thumbnail')
                     yield fuse.Direntry('link')
 
@@ -134,7 +114,7 @@ class RFS(fuse.Fuse):
             if path_length == 2:
                 yield fuse.Direntry(self.reddit.user.me().name)
 
-            elif path_length == 3:
+            elif path_length == 3:  # /mnt/u/<username>
                 for item in utils.USER_METADATA:
                     yield fuse.Direntry(item)
 
@@ -142,14 +122,14 @@ class RFS(fuse.Fuse):
                 redditor = self.reddit.redditor(splitted_path[2])
                 if splitted_path[3] == 'submissions':
                     for post in redditor.submissions.top(limit=utils.MAX_LENGTH):
-                        filename = utils.sanitize_filepath(f'{post.title[:utils.MAX_LENGTH]} {post.id}')
+                        filename = utils.get_filename(f'{post.title[:utils.MAX_LENGTH]} {post.id}')
                         yield fuse.Direntry(filename)
                 if splitted_path[3] == 'comments':
                     for post in redditor.submissions.top(limit=utils.MAX_LENGTH):
-                        filename = utils.sanitize_filepath(f'{post.title[:utils.MAX_LENGTH]} {post.id}')
+                        filename = utils.get_filename(f'{post.title[:utils.MAX_LENGTH]} {post.id}')
                         yield fuse.Direntry(filename)
 
-    def mkdir(self, path, mode):
+    def mkdir(self, path, mode):  # Usage: mkdir mnt/r/<sub>
         print('******************** MKDIR ********************')
         try:
             sub = path.split('/')[-1]
@@ -158,7 +138,7 @@ class RFS(fuse.Fuse):
         except:
             return -errno.ENOSYS
 
-    def rmdir(self, path):
+    def rmdir(self, path):  # Usage: rmdir mnt/r/<sub>
         print('******************** RMDIR ********************')
         try:
             sub = path.split('/')[-1]
@@ -167,9 +147,9 @@ class RFS(fuse.Fuse):
         except:
             return -errno.ENOSYS
 
-    def read(self, path, length, offset, fh=None):
+    def read(self, path, length, offset, fh=None):  # Usage: cat mnt/r/<sub>/<post>/content
         print('******************** READ ********************')
-        formatted = []
+        data = []
         splitted_path = path.split('/')
         path_length = len(splitted_path)
 
@@ -178,76 +158,35 @@ class RFS(fuse.Fuse):
                 post_id = splitted_path[3].split('_')[-1]
                 post = self.reddit.submission(post_id)
 
-                formatted = ''
-                if splitted_path[-1] == 'content':
-                    formatted = utils.formatted_submission(post)
-                    formatted = formatted.encode('ascii', 'ignore')
-                elif splitted_path[-1] == 'votes':
-                    formatted = str(post.score) + '\n'
-                    formatted = formatted.encode('ascii', 'ignore')
-                elif splitted_path[-1] == 'comments':
-                    formatted = utils.formatted_comment(post)
-                    formatted = formatted.encode('ascii', 'ignore')
-                elif (splitted_path[-1] == 'thumbnail' and post.thumbnail != '' and
-                      post.thumbnail != 'self' and post.thumbnail != 'default'):
-                    f = requests.get(post.url)
-                    if f.status_code == 200:
-                        formatted = f.content
-                elif splitted_path[-1] == 'link' and post.url:
-                    f = requests.get(post.url)
-                    if f.status_code == 200:
-                        formatted = f.content
-        return formatted[offset:offset + length]
+                data = utils.get_file_content(path, post)
+        return data[offset:offset + length]
 
-    def readlink(self, path):
-        print('******************** READLINK ********************')
-        splitted_path = path.split('/')
-        path_length = len(splitted_path)
-        dots = ''
-
-        if splitted_path[-1:][0][-1:] == '_' and path_length >= 5:
-            path_length -= 2
-            while path_length > 0:
-                dots += '../'
-                path_length -= 1
-            return f'{dots}u/{splitted_path[-1:][0][11:-1]}'
-
-        if splitted_path[1] == 'u' and path_length == 5:
-            path_length -= 2
-            while path_length > 0:
-                dots += '../'
-                path_length -= 1
-            comment_id = path.split('_')[-1]
-            post = self.reddit.submission(comment_id)
-            subreddit = post.subreddit
-            post_id = post.id
-            return f'{dots}r/{subreddit}/{post_id}'
-
-    def write(self, path, buffer, offset, fh=None):
+    def write(self, path, buffer, offset, fh=None):  # Usage: echo 1 >> mnt/r/<sub>/<post>/votes
         print('******************** WRITE ********************')
         splitted_path = path.split('/')
 
         if splitted_path[1] == 'r':
             if splitted_path[-1] == 'votes':
                 post = self.reddit.submission(splitted_path[-2].split('_')[-1])
-                vote = int(buffer)
-                if vote == 0:
-                    post.clear_vote()
-                elif vote > 0:
+                try:
+                    vote = int(buffer)
+                    if vote == 0:
+                        post.clear_vote()
+                    elif vote > 0:
+                        post.upvote()
+                    elif vote < 0:
+                        post.downvote()
+                    return len(buffer)
+                except:
                     post.upvote()
-                elif vote < 0:
-                    post.downvote()
-                return len(buffer)
+                    return len(buffer)
 
             if splitted_path[-1] == 'reply':
                 post = self.reddit.submission(splitted_path[-2].split('_')[-1])
                 post.reply(buffer)
-                return len(buffer)
 
-            if splitted_path[-1] == 'post':
+            elif splitted_path[-1] == 'post':
                 self.reddit.validate_on_submit = True
-                print(buffer)
-                print(buffer.decode().split('##'))
                 buffer_split = buffer.decode().split('##')
                 title = buffer_split[0].strip()
                 text = buffer_split[1].strip()
@@ -255,7 +194,7 @@ class RFS(fuse.Fuse):
                     self.reddit.subreddit(splitted_path[2]).submit(title=title, url=text)
                 else:
                     self.reddit.subreddit(splitted_path[2]).submit(title=title, selftext=text)
-                return len(buffer)
+        return len(buffer)
 
 
 if __name__ == '__main__':

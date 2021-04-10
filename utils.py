@@ -3,6 +3,7 @@ import textwrap
 import time
 
 import praw
+import requests as requests
 
 import tokens
 
@@ -10,17 +11,6 @@ import tokens
 MAX_LENGTH = 50
 POST_METADATA = ['thumbnail', 'votes', 'content', 'reply', 'link', 'comments']
 USER_METADATA = ['submissions', 'comments']
-
-
-def sanitize_filepath(path):
-    for chars in ['&', ':', '<', '>', '|', '/', '?', '!', '.']:
-        if chars in path:
-            path = path.replace(chars, '')
-    path = ' '.join(path.split())
-    for chars in [' ', '\n', '\0', '\t']:
-        if chars in path:
-            path = path.replace(chars, '_')
-    return path
 
 
 def setup_reddit():
@@ -33,24 +23,15 @@ def setup_reddit():
         sys.exit("Error during Reddit setup!")
 
 
-def fetch_posts_from_reddit(path, reddit):
-    splitted_path = path.split('/')
-    path_length = len(splitted_path)
-    post = reddit.submission(splitted_path[3].split('_')[-1])
-    for comment in post.comments:
-        if comment.id == splitted_path[3].split('_')[-1]:
-            break
-
-    nesting = 4
-    offset = 1
-    if splitted_path[-1] in POST_METADATA:
-        offset = 2
-    while nesting < path_length - offset:
-        nesting = nesting + 1
-        for comment in comment.replies:
-            if comment.id == splitted_path[3].split('_')[-1]:
-                break
-    return comment
+def get_filename(path):
+    for chars in ['&', ':', '<', '>', '|', '/', '?', '!', '.']:
+        if chars in path:
+            path = path.replace(chars, '')
+    path = ' '.join(path.split())
+    for chars in [' ', '\n', '\0', '\t']:
+        if chars in path:
+            path = path.replace(chars, '_')
+    return path
 
 
 def formatted_submission(submission):
@@ -108,8 +89,7 @@ def get_comment_header(comment, indent):
 def get_comment_body(comment, indent):
     wrap = indent * ' ' + (78 - indent) * '-' + '\n'
     indent = indent * ' '
-    wrapper = textwrap.TextWrapper(initial_indent=indent + '|',
-                                   subsequent_indent=indent + '|', width=79)
+    wrapper = textwrap.TextWrapper(initial_indent=indent + '|', subsequent_indent=indent + '|', width=80)
     return '\n'.join(wrapper.wrap(comment.body) + [wrap])
 
 
@@ -118,3 +98,27 @@ def get_post_metadata(post):
                 'time': time.ctime(post.created),
                 'score': post.score, 'id': post.id}
     return metadata
+
+
+def get_file_content(path, post):
+    data = ''
+    splitted_path = path.split('/')
+    if splitted_path[-1] == 'content':
+        data = formatted_submission(post)
+        data = data.encode('ascii', 'ignore')
+    elif splitted_path[-1] == 'votes':
+        data = str(post.score) + '\n'
+        data = data.encode('ascii', 'ignore')
+    elif splitted_path[-1] == 'comments':
+        data = formatted_comment(post)
+        data = data.encode('ascii', 'ignore')
+    elif (splitted_path[-1] == 'thumbnail' and 'thumbnail' in dir(post) and post.thumbnail not in ['', 'self',
+                                                                                                   'default']):
+        f = requests.get(post.thumbnail)
+        if f.status_code == 200:
+            data = f.content
+    elif splitted_path[-1] == 'link' and post.url:
+        f = requests.get(post.url)
+        if f.status_code == 200:
+            data = f.content
+    return data
